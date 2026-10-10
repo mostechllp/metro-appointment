@@ -6,12 +6,11 @@ const submissionSchema = new mongoose.Schema({
   emirate: { type: String, required: true },
   address: { type: String },
   email: { type: String },
-  platform: {
+  attendance: {
     type: String,
-    enum: ['google', 'teams', 'zoom', 'other'],
-    default: 'google'
+    enum: ['attended', 'not-attended'],
+    default: 'attended'
   },
-  meetingLink: { type: String, default: '' },
   createdAt: { type: Date, default: Date.now }
 });
 

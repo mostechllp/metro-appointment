@@ -21,6 +21,13 @@ app.use(cors({
     // Allow requests with no origin (curl, Postman, mobile apps)
     if (!origin) return callback(null, true);
 
+    // Silently reject browser-extension requests
+    if (origin.startsWith('chrome-extension://') ||
+        origin.startsWith('moz-extension://') ||
+        origin.startsWith('safari-extension://')) {
+      return callback(null, false); // no log, no header, just reject
+    }
+
     if (ALLOWED_ORIGINS.includes(origin)) {
       return callback(null, true);
     }

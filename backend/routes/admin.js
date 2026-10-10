@@ -104,30 +104,7 @@ router.get('/submissions', auth, async (req, res) => {
   }
 });
 
-// ==============================
-// PATCH /api/admin/submissions/:id (protected)
-// ==============================
-router.patch('/submissions/:id', auth, async (req, res) => {
-  try {
-    const { platform, meetingLink } = req.body;
 
-    if (meetingLink && !/^https?:\/\//.test(meetingLink)) {
-      return res.status(400).json({ message: 'Meeting link must start with http:// or https://' });
-    }
-
-    const submission = await Submission.findByIdAndUpdate(
-      req.params.id,
-      { platform, meetingLink },
-      { new: true, runValidators: true }
-    );
-
-    if (!submission) return res.status(404).json({ message: 'Not found' });
-    res.json(submission);
-  } catch (err) {
-    console.error('Update error:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
 
 router.get('/meeting-link', auth, async (req, res) => {
   try {
@@ -168,6 +145,59 @@ router.put('/meeting-link', auth, async (req, res) => {
     res.json(setting.value);
   } catch (err) {
     console.error('Update meeting link error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ==============================
+// PATCH /api/admin/submissions/:id/attendance (protected)
+// Update attendance status for a single submission
+// ==============================
+router.patch('/submissions/:id/attendance', auth, async (req, res) => {
+  try {
+    const { attendance } = req.body;
+
+    if (!['attended', 'not-attended'].includes(attendance)) {
+      return res
+        .status(400)
+        .json({ message: 'Attendance must be "attended" or "not-attended"' });
+    }
+
+    const submission = await Submission.findByIdAndUpdate(
+      req.params.id,
+      { attendance },
+      { new: true, runValidators: true }
+    );
+
+    if (!submission) return res.status(404).json({ message: 'Not found' });
+    res.json(submission);
+  } catch (err) {
+    console.error('Attendance update error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// ==============================
+// PATCH /api/admin/submissions/:id (protected)
+// ==============================
+router.patch('/submissions/:id', auth, async (req, res) => {
+  try {
+    const { platform, meetingLink } = req.body;
+
+    if (meetingLink && !/^https?:\/\//.test(meetingLink)) {
+      return res.status(400).json({ message: 'Meeting link must start with http:// or https://' });
+    }
+
+    const submission = await Submission.findByIdAndUpdate(
+      req.params.id,
+      { platform, meetingLink },
+      { new: true, runValidators: true }
+    );
+
+    if (!submission) return res.status(404).json({ message: 'Not found' });
+    res.json(submission);
+  } catch (err) {
+    console.error('Update error:', err);
     res.status(500).json({ message: 'Server error' });
   }
 });

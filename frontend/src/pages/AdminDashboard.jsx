@@ -22,6 +22,7 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState(null);
+  const [savingAttendance, setSavingAttendance] = useState({});
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -46,6 +47,34 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   };
+
+  const updateAttendance = async (id, attendance) => {
+  // Optimistic update — reflect immediately in UI
+  setSubmissions((prev) =>
+    prev.map((s) => (s._id === id ? { ...s, attendance } : s))
+  );
+  setSavingAttendance((prev) => ({ ...prev, [id]: true }));
+
+  try {
+    await API.patch(`/admin/submissions/${id}/attendance`, { attendance });
+  } catch (err) {
+    // Rollback on failure
+    setSubmissions((prev) =>
+      prev.map((s) =>
+        s._id === id
+          ? { ...s, attendance: attendance === 'attended' ? 'not-attended' : 'attended' }
+          : s
+      )
+    );
+    alert(err.response?.data?.message || 'Failed to update attendance');
+  } finally {
+    setSavingAttendance((prev) => {
+      const copy = { ...prev };
+      delete copy[id];
+      return copy;
+    });
+  }
+};
 
   const handleEdit = (id, key, value) => {
     setEdits((prev) => ({
@@ -231,7 +260,11 @@ export default function AdminDashboard() {
       : 'No submissions yet.'}
   </div>
 ) : (
-  <RegistrationsTab submissions={filtered} />
+  <RegistrationsTab
+  submissions={filtered}
+  updateAttendance={updateAttendance}
+  savingAttendance={savingAttendance}
+/>
 )}
         </main>
       </div>
@@ -242,47 +275,74 @@ export default function AdminDashboard() {
 /* ============================================================
    TAB 1 — Registrations (read-only table)
    ============================================================ */
-function RegistrationsTab({ submissions }) {
+function RegistrationsTab({ submissions, updateAttendance, savingAttendance }) {
   return (
     <div className="reg-cards">
-      {submissions.map((s) => (
-        <div key={s._id} className="reg-card">
-          <div className="reg-card-head">
-            <div>
-              <div className="reg-name">{s.name}</div>
-              <div className="reg-date">
-                {new Date(s.createdAt).toLocaleString()}
+      {submissions.map((s) => {
+        const attendance = s.attendance || 'attended'; // fallback for old docs
+        const isSaving = savingAttendance?.[s._id];
+
+        return (
+          <div key={s._id} className="reg-card">
+            <div className="reg-card-head">
+              <div>
+                <div className="reg-name">{s.name}</div>
+                <div className="reg-date">
+                  {new Date(s.createdAt).toLocaleString()}
+                </div>
+              </div>
+              <div className={`reg-status ${attendance === 'attended' ? 'ok' : 'pending'}`}>
+                {attendance === 'attended' ? 'Attended' : 'Not Attended'}
               </div>
             </div>
-            <div className={`reg-status ${s.meetingLink ? 'ok' : 'pending'}`}>
-              {s.meetingLink ? 'Link ready' : 'Pending'}
-            </div>
-          </div>
 
-          <div className="reg-grid">
-            <div className="reg-field">
-              <span className="reg-label">Phone</span>
-              <span className="reg-value">
-                <a href={`tel:${s.phone}`}>{s.phone}</a>
-              </span>
+            <div className="reg-grid">
+              <div className="reg-field">
+                <span className="reg-label">Phone</span>
+                <span className="reg-value">
+                  <a href={`tel:${s.phone}`}>{s.phone}</a>
+                </span>
+              </div>
+              <div className="reg-field">
+                <span className="reg-label">Email</span>
+                <span className="reg-value">
+                  {s.email ? <a href={`mailto:${s.email}`}>{s.email}</a> : '—'}
+                </span>
+              </div>
+              <div className="reg-field">
+                <span className="reg-label">Emirate</span>
+                <span className="reg-value">{s.emirate}</span>
+              </div>
+              <div className="reg-field">
+                <span className="reg-label">Address</span>
+                <span className="reg-value">{s.address || '—'}</span>
+              </div>
             </div>
-            <div className="reg-field">
-              <span className="reg-label">Email</span>
-              <span className="reg-value">
-                {s.email ? <a href={`mailto:${s.email}`}>{s.email}</a> : '—'}
-              </span>
-            </div>
-            <div className="reg-field">
-              <span className="reg-label">Emirate</span>
-              <span className="reg-value">{s.emirate}</span>
-            </div>
-            <div className="reg-field">
-              <span className="reg-label">Address</span>
-              <span className="reg-value">{s.address || '—'}</span>
+
+            {/* Attendance dropdown */}
+            <div className="attendance-row">
+              <label className="attendance-label">
+                <CheckCircle2 size={14} />
+                Attendance
+              </label>
+              <div className="attendance-select-wrap">
+                <select
+                  className={`attendance-select ${attendance}`}
+                  value={attendance}
+                  onChange={(e) => updateAttendance(s._id, e.target.value)}
+                  disabled={isSaving}
+                >
+                  <option value="attended">✓ Attended</option>
+                  <option value="not-attended">✕ Not Attended</option>
+                </select>
+                {isSaving && (
+                  <RefreshCw size={14} className="spin attendance-spinner" />
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
