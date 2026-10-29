@@ -1,9 +1,15 @@
 import React from 'react';
+// Contact icons from Lucide
+import { Phone, Mail, MapPin } from 'lucide-react';
+// Brand icons from React Icons
+import { FaInstagram, FaFacebookF, FaLinkedinIn } from 'react-icons/fa';
 
 export default function Footer() {
   return (
     <footer className="footer">
       <div className="footer-inner">
+        
+        {/* Brand Column */}
         <div className="footer-brand">
           <img
             src="/assets/images/logo/logo.webp"
@@ -18,30 +24,37 @@ export default function Footer() {
             patient.
           </p>
           <div className="footer-socials">
-            <a href="https://www.instagram.com/starcare.uae" className="footer-social" target="_blank" rel="noreferrer" aria-label="Instagram">📷</a>
-            <a href="https://www.facebook.com/share/15BroPchCk/" className="footer-social" target="_blank" rel="noreferrer" aria-label="Facebook">f</a>
-            <a href="https://www.linkedin.com/company/metro-starcare/posts/" className="footer-social" target="_blank" rel="noreferrer" aria-label="LinkedIn">in</a>
+            <a href="https://www.instagram.com/starcare.uae" className="footer-social" target="_blank" rel="noreferrer" aria-label="Instagram">
+              <FaInstagram size={18} />
+            </a>
+            <a href="https://www.facebook.com/share/15BroPchCk/" className="footer-social" target="_blank" rel="noreferrer" aria-label="Facebook">
+              <FaFacebookF size={18} />
+            </a>
+            <a href="https://www.linkedin.com/company/metro-starcare/posts/" className="footer-social" target="_blank" rel="noreferrer" aria-label="LinkedIn">
+              <FaLinkedinIn size={18} />
+            </a>
           </div>
         </div>
 
-
+        {/* Contact Column */}
         <div>
           <h2>Contact</h2>
           <ul className="footer-contact">
             <li>
-              <span className="contact-icon">📞</span>
+              <span className="contact-icon"><Phone size={16} /></span>
               <span><a href="tel:+971528415113">+971 52 841 5113</a></span>
             </li>
             <li>
-              <span className="contact-icon">✉️</span>
+              <span className="contact-icon"><Mail size={16} /></span>
               <span><a href="mailto:info@metrostarcare.ae">info@metrostarcare.ae</a></span>
             </li>
             <li>
-              <span className="contact-icon">📍</span>
+              <span className="contact-icon"><MapPin size={16} /></span>
               <span>Malabar Plaza, Rolla, Sharjah, UAE</span>
             </li>
           </ul>
         </div>
+        
       </div>
 
       <div className="footer-bottom">

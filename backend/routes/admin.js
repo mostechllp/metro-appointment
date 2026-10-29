@@ -220,9 +220,9 @@ router.get('/export/:eventId', auth, async (req, res) => {
 
     const registrations = await Submission.find({ eventId }).sort({ name: 1 });
 
-    // 👈 Create clean filename: Registrations-EventName-YYYY-MM-DD
+    // 👈 FIX 3: Use Asia/Dubai for the filename date
     const cleanEventName = event.title.replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-');
-    const dateStr = new Date().toISOString().split('T')[0];
+    const dateStr = new Date().toLocaleDateString('en-AE', { timeZone: 'Asia/Dubai' }).split('/').reverse().join('-'); 
     const fileName = `Registrations-${cleanEventName}-${dateStr}`;
 
     // ==========================================
@@ -249,11 +249,12 @@ router.get('/export/:eventId', auth, async (req, res) => {
         worksheet.addRow({
           name: reg.name,
           email: reg.email,
-          phone: reg.phone + '\u200B', // 👈 Zero-width space prevents Excel scientific notation
+          phone: reg.phone + '\u200B',
           emirate: reg.emirate,
           attendance: reg.attendance === 'attended' ? 'Attended' : 'Not Attended',
           certificateSent: reg.certificateSent ? 'Yes' : 'No',
-          createdAt: new Date(reg.createdAt).toLocaleString(),
+          // Excel is already correct from the previous fix
+          createdAt: new Date(reg.createdAt).toLocaleString('en-AE', { timeZone: 'Asia/Dubai' }),
         });
       });
 
@@ -275,15 +276,15 @@ router.get('/export/:eventId', auth, async (req, res) => {
 
       doc.pipe(res);
 
-      // 👈 PDF Header / Branding
+      // PDF Header / Branding
       doc.fontSize(22).fillColor('#8B1A4A').font('Helvetica-Bold').text('METROSTARCARE', { align: 'center' });
       doc.fontSize(12).fillColor('#6B5560').font('Helvetica').text('Metro Medical Centre', { align: 'center' });
       doc.moveDown(1.5);
       
-      // Event Details
+      // 👈 FIX 2: Added Asia/Dubai to both Event Date and Generated Date
       doc.fontSize(16).fillColor('#000000').font('Helvetica-Bold').text(event.title, { align: 'center' });
-      doc.fontSize(10).font('Helvetica').text(`Date: ${new Date(event.date).toLocaleString()}`, { align: 'center' });
-      doc.fontSize(10).text(`Generated on: ${new Date().toLocaleString()}`, { align: 'center' });
+      doc.fontSize(10).font('Helvetica').text(`Date: ${new Date(event.date).toLocaleString('en-AE', { timeZone: 'Asia/Dubai' })}`, { align: 'center' });
+      doc.fontSize(10).text(`Generated on: ${new Date().toLocaleString('en-AE', { timeZone: 'Asia/Dubai' })}`, { align: 'center' });
       
       doc.moveDown(2);
 
@@ -326,8 +327,10 @@ router.get('/export/:eventId', auth, async (req, res) => {
     if (format === 'csv') {
       let csvContent = 'Name,Email,Phone,Emirate,Attendance,Certificate Sent,Date\n';
       registrations.forEach(reg => {
-        // 👈 Wrapping phone in ="..." forces Excel to treat it as text
-        csvContent += `"${reg.name}","${reg.email || ''}","=""${reg.phone}""","${reg.emirate}","${reg.attendance}","${reg.certificateSent ? 'Yes' : 'No'}","${new Date(reg.createdAt).toLocaleString()}"\n`;
+        // 👈 FIX 1: Added Asia/Dubai to the CSV date
+        const localDate = new Date(reg.createdAt).toLocaleString('en-AE', { timeZone: 'Asia/Dubai' });
+        
+        csvContent += `"${reg.name}","${reg.email || ''}","=""${reg.phone}""","${reg.emirate}","${reg.attendance}","${reg.certificateSent ? 'Yes' : 'No'}","${localDate}"\n`;
       });
 
       res.setHeader('Content-Type', 'text/csv');
