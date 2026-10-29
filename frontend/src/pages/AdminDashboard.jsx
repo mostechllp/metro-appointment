@@ -1,29 +1,33 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom'; // 👈 Import useSearchParams
 import {
   Users,
-  Link2,
+  Calendar,
   LogOut,
   RefreshCw,
-  Copy,
-  ExternalLink,
-  CheckCircle2,
   Search,
-  Menu
+  Menu,
+  CheckCircle2,
+  Send,
+  Download
 } from 'lucide-react';
 import API from '../api';
 import Header from '../components/Header';
+import ConfirmModal from '../components/ConfirmModal';
+import ExportModal from '../components/ExportModal';
 
 export default function AdminDashboard() {
   const [submissions, setSubmissions] = useState([]);
-  const [edits, setEdits] = useState({});
-  const [activeTab, setActiveTab] = useState('registrations');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
-  const [copiedId, setCopiedId] = useState(null);
   const [savingAttendance, setSavingAttendance] = useState({});
+  
   const navigate = useNavigate();
+  
+  // 👈 Use URL Search Params for the active tab
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'registrations';
 
   useEffect(() => {
     if (!localStorage.getItem('adminToken')) {
@@ -49,67 +53,29 @@ export default function AdminDashboard() {
   };
 
   const updateAttendance = async (id, attendance) => {
-  // Optimistic update — reflect immediately in UI
-  setSubmissions((prev) =>
-    prev.map((s) => (s._id === id ? { ...s, attendance } : s))
-  );
-  setSavingAttendance((prev) => ({ ...prev, [id]: true }));
-
-  try {
-    await API.patch(`/admin/submissions/${id}/attendance`, { attendance });
-  } catch (err) {
-    // Rollback on failure
     setSubmissions((prev) =>
-      prev.map((s) =>
-        s._id === id
-          ? { ...s, attendance: attendance === 'attended' ? 'not-attended' : 'attended' }
-          : s
-      )
+      prev.map((s) => (s._id === id ? { ...s, attendance } : s))
     );
-    alert(err.response?.data?.message || 'Failed to update attendance');
-  } finally {
-    setSavingAttendance((prev) => {
-      const copy = { ...prev };
-      delete copy[id];
-      return copy;
-    });
-  }
-};
-
-  const handleEdit = (id, key, value) => {
-    setEdits((prev) => ({
-      ...prev,
-      [id]: { ...prev[id], [key]: value }
-    }));
-  };
-
-  const saveEdit = async (sub) => {
-    const edit = edits[sub._id] || {};
-    const platform = edit.platform ?? sub.platform;
-    const meetingLink = edit.meetingLink ?? sub.meetingLink;
-
-    if (meetingLink && !/^https?:\/\//.test(meetingLink)) {
-      alert('Link must start with http:// or https://');
-      return;
-    }
+    setSavingAttendance((prev) => ({ ...prev, [id]: true }));
 
     try {
-      await API.patch(`/admin/submissions/${sub._id}`, { platform, meetingLink });
-      await fetchData();
-      setEdits((prev) => {
+      await API.patch(`/admin/submissions/${id}/attendance`, { attendance });
+    } catch (err) {
+      setSubmissions((prev) =>
+        prev.map((s) =>
+          s._id === id
+            ? { ...s, attendance: attendance === 'attended' ? 'not-attended' : 'attended' }
+            : s
+        )
+      );
+      alert(err.response?.data?.message || 'Failed to update attendance');
+    } finally {
+      setSavingAttendance((prev) => {
         const copy = { ...prev };
-        delete copy[sub._id];
+        delete copy[id];
         return copy;
       });
-    } catch (err) {
-      alert(err.response?.data?.message || 'Error saving');
     }
-  };
-
-  const copyLink = (id, link) => {
-    navigator.clipboard.writeText(link);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 1800);
   };
 
   const logout = () => {
@@ -119,7 +85,6 @@ export default function AdminDashboard() {
     navigate('/admin/login');
   };
 
-  // Filter by search query
   const filtered = submissions.filter((s) => {
     if (!searchQuery) return true;
     const q = searchQuery.toLowerCase();
@@ -133,14 +98,18 @@ export default function AdminDashboard() {
 
   const stats = {
     total: submissions.length,
-    withLink: submissions.filter((s) => s.meetingLink).length,
-    pending: submissions.filter((s) => !s.meetingLink).length
   };
 
- const tabs = [
-  { key: 'registrations', label: 'Registrations', icon: Users, count: stats.total },
-  { key: 'meetings', label: 'Meeting Link', icon: Link2 }
-];
+  const tabs = [
+    { key: 'registrations', label: 'Registrations', icon: Users, count: stats.total },
+    { key: 'events', label: 'Manage Events', icon: Calendar }
+  ];
+
+  // 👈 Helper to change tab and update URL
+  const handleTabChange = (tabKey) => {
+    setSearchParams({ tab: tabKey });
+    setSidebarOpen(false);
+  };
 
   return (
     <>
@@ -177,10 +146,7 @@ export default function AdminDashboard() {
                 <button
                   key={t.key}
                   className={`sidebar-item ${activeTab === t.key ? 'active' : ''}`}
-                  onClick={() => {
-                    setActiveTab(t.key);
-                    setSidebarOpen(false);
-                  }}
+                  onClick={() => handleTabChange(t.key)} // 👈 Use the helper
                 >
                   <Icon size={18} />
                   <span>{t.label}</span>
@@ -192,16 +158,8 @@ export default function AdminDashboard() {
 
           <div className="sidebar-stats">
             <div className="stat-row">
-              <span>Total</span>
+              <span>Total Registrations</span>
               <strong>{stats.total}</strong>
-            </div>
-            <div className="stat-row">
-              <span>With link</span>
-              <strong style={{ color: '#22a06b' }}>{stats.withLink}</strong>
-            </div>
-            <div className="stat-row">
-              <span>Pending</span>
-              <strong style={{ color: '#db2c66' }}>{stats.pending}</strong>
             </div>
           </div>
 
@@ -225,47 +183,45 @@ export default function AdminDashboard() {
               </h1>
               <p className="admin-page-sub">
                 {activeTab === 'registrations'
-  ? 'All submitted appointment requests'
-  : 'Set the global meeting link shown to every patient'}
+                  ? 'All submitted event registrations'
+                  : 'Create and manage your events and meeting links'}
               </p>
             </div>
 
             <div className="admin-actions">
-  {activeTab === 'registrations' && (
-    <div className="admin-search">
-      <Search size={16} />
-      <input
-        placeholder="Search name, phone, email…"
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-      />
-    </div>
-  )}
-  {activeTab === 'registrations' && (
-    <button className="admin-refresh" onClick={fetchData} title="Refresh">
-      <RefreshCw size={16} className={loading ? 'spin' : ''} />
-    </button>
-  )}
-</div>
+              {activeTab === 'registrations' && (
+                <>
+                  <div className="admin-search">
+                    <Search size={16} />
+                    <input
+                      placeholder="Search name, phone, email…"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                  </div>
+                  <button className="admin-refresh" onClick={fetchData} title="Refresh">
+                    <RefreshCw size={16} className={loading ? 'spin' : ''} />
+                  </button>
+                </>
+              )}
+            </div>
           </div>
 
-          {activeTab === 'meetings' ? (
-  <MeetingsTab />
-) : loading ? (
-  <div className="admin-empty">Loading submissions…</div>
-) : filtered.length === 0 ? (
-  <div className="admin-empty">
-    {searchQuery
-      ? 'No results matching your search.'
-      : 'No submissions yet.'}
-  </div>
-) : (
-  <RegistrationsTab
-  submissions={filtered}
-  updateAttendance={updateAttendance}
-  savingAttendance={savingAttendance}
-/>
-)}
+          {activeTab === 'events' ? (
+            <EventsTab />
+          ) : loading ? (
+            <div className="admin-empty">Loading submissions…</div>
+          ) : filtered.length === 0 ? (
+            <div className="admin-empty">
+              {searchQuery ? 'No results matching your search.' : 'No submissions yet.'}
+            </div>
+          ) : (
+            <RegistrationsTab
+              submissions={filtered}
+              updateAttendance={updateAttendance}
+              savingAttendance={savingAttendance}
+            />
+          )}
         </main>
       </div>
     </>
@@ -273,244 +229,409 @@ export default function AdminDashboard() {
 }
 
 /* ============================================================
-   TAB 1 — Registrations (read-only table)
+   TAB 1 — Registrations (Grouped by Event)
    ============================================================ */
 function RegistrationsTab({ submissions, updateAttendance, savingAttendance }) {
+  // 👈 Export Modal State
+  const [exportConfig, setExportConfig] = useState({ isOpen: false, eventId: null, title: '' });
+  const [isExporting, setIsExporting] = useState(false);
+
+  // 👈 Handle Export Download
+  const handleExport = async (format) => {
+    if (!exportConfig.eventId) return;
+    setIsExporting(true);
+    try {
+      const res = await API.get(`/admin/export/${exportConfig.eventId}?format=${format}`, {
+        responseType: 'blob',
+      });
+
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      
+      const contentDisposition = res.headers['content-disposition'];
+      let filename = `registrations.${format === 'excel' ? 'xlsx' : format}`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (match && match[1]) filename = match[1];
+      }
+
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode.removeChild(link);
+      
+      setExportConfig({ isOpen: false, eventId: null, title: '' });
+    } catch (err) {
+      alert('Failed to download file');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  // 1. Group submissions by Event ID
+  const groupedSubmissions = submissions.reduce((groups, sub) => {
+    const eventId = sub.eventId?._id || 'legacy';
+    
+    if (!groups[eventId]) {
+      groups[eventId] = {
+        eventDetails: sub.eventId || null,
+        items: []
+      };
+    }
+    
+    groups[eventId].items.push(sub);
+    return groups;
+  }, {});
+
+  // 2. Convert object to array and sort groups
+  const sortedGroups = Object.values(groupedSubmissions).sort((a, b) => {
+    if (!a.eventDetails) return 1;
+    if (!b.eventDetails) return -1;
+    return new Date(b.eventDetails.date) - new Date(a.eventDetails.date);
+  });
+
   return (
-    <div className="reg-cards">
-      {submissions.map((s) => {
-        const attendance = s.attendance || 'attended'; // fallback for old docs
-        const isSaving = savingAttendance?.[s._id];
+    <div className="grouped-reg-list">
+      {sortedGroups.map((group) => {
+        const { eventDetails, items } = group;
+        
+        const groupTitle = eventDetails 
+          ? eventDetails.title 
+          : 'Legacy Registrations (No Event)';
+          
+        const groupSubtitle = eventDetails
+          ? `${new Date(eventDetails.date).toLocaleString()} - ${eventDetails.durationMinutes} mins`
+          : 'Older registrations created before events were added';
 
         return (
-          <div key={s._id} className="reg-card">
-            <div className="reg-card-head">
+          <div key={eventDetails?._id || 'legacy'} className="event-group" style={{ marginBottom: 40 }}>
+            
+            {/* Group Header */}
+            <div className="event-group-header">
               <div>
-                <div className="reg-name">{s.name}</div>
-                <div className="reg-date">
-                  {new Date(s.createdAt).toLocaleString()}
+                <h3 className="event-group-title">
+                  {eventDetails ? '📅' : '📁'} {groupTitle}
+                </h3>
+                <p className="event-group-subtitle">{groupSubtitle}</p>
+              </div>
+              
+              {/* Header Actions & Badge */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div className="event-group-badge">
+                  {items.length} {items.length === 1 ? 'Registration' : 'Registrations'}
                 </div>
-              </div>
-              <div className={`reg-status ${attendance === 'attended' ? 'ok' : 'pending'}`}>
-                {attendance === 'attended' ? 'Attended' : 'Not Attended'}
-              </div>
-            </div>
-
-            <div className="reg-grid">
-              <div className="reg-field">
-                <span className="reg-label">Phone</span>
-                <span className="reg-value">
-                  <a href={`tel:${s.phone}`}>{s.phone}</a>
-                </span>
-              </div>
-              <div className="reg-field">
-                <span className="reg-label">Email</span>
-                <span className="reg-value">
-                  {s.email ? <a href={`mailto:${s.email}`}>{s.email}</a> : '—'}
-                </span>
-              </div>
-              <div className="reg-field">
-                <span className="reg-label">Emirate</span>
-                <span className="reg-value">{s.emirate}</span>
-              </div>
-              <div className="reg-field">
-                <span className="reg-label">Address</span>
-                <span className="reg-value">{s.address || '—'}</span>
-              </div>
-            </div>
-
-            {/* Attendance dropdown */}
-            <div className="attendance-row">
-              <label className="attendance-label">
-                <CheckCircle2 size={14} />
-                Attendance
-              </label>
-              <div className="attendance-select-wrap">
-                <select
-                  className={`attendance-select ${attendance}`}
-                  value={attendance}
-                  onChange={(e) => updateAttendance(s._id, e.target.value)}
-                  disabled={isSaving}
-                >
-                  <option value="attended">✓ Attended</option>
-                  <option value="not-attended">✕ Not Attended</option>
-                </select>
-                {isSaving && (
-                  <RefreshCw size={14} className="spin attendance-spinner" />
+                
+                {eventDetails && (
+                  <button 
+                    className="btn btn-outline" 
+                    style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', width: 'auto' }}
+                    onClick={() => setExportConfig({ isOpen: true, eventId: eventDetails._id, title: eventDetails.title })}
+                  >
+                    <Download size={14} /> Export
+                  </button>
                 )}
               </div>
+            </div>
+
+            {/* Group Cards Grid */}
+            <div className="reg-cards">
+              {items.map((s) => {
+                const attendance = s.attendance || 'attended';
+                const isSaving = savingAttendance?.[s._id];
+
+                return (
+                  <div key={s._id} className="reg-card">
+                    <div className="reg-card-head">
+                      <div>
+                        <div className="reg-name">{s.name}</div>
+                        <div className="reg-date">
+                          Registered: {new Date(s.createdAt).toLocaleString()}
+                        </div>
+                      </div>
+                      <div className={`reg-status ${attendance === 'attended' ? 'ok' : 'pending'}`}>
+                        {attendance === 'attended' ? 'Attended' : 'Not Attended'}
+                      </div>
+                    </div>
+
+                    <div className="reg-grid">
+                      <div className="reg-field">
+                        <span className="reg-label">Phone</span>
+                        <span className="reg-value">
+                          <a href={`tel:${s.phone}`}>{s.phone}</a>
+                        </span>
+                      </div>
+                      <div className="reg-field">
+                        <span className="reg-label">Email</span>
+                        <span className="reg-value">
+                          {s.email ? <a href={`mailto:${s.email}`}>{s.email}</a> : '—'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="attendance-row">
+                      <label className="attendance-label">
+                        <CheckCircle2 size={14} />
+                        Attendance
+                      </label>
+                      <div className="attendance-select-wrap">
+                        <select
+                          className={`attendance-select ${attendance}`}
+                          value={attendance}
+                          onChange={(e) => updateAttendance(s._id, e.target.value)}
+                          disabled={isSaving}
+                        >
+                          <option value="attended">✓ Attended</option>
+                          <option value="not-attended">✕ Not Attended</option>
+                        </select>
+                        {isSaving && <RefreshCw size={14} className="spin attendance-spinner" />}
+                      </div>
+                    </div>
+                    
+                    {s.certificateSent && (
+                      <div style={{ marginTop: 12, fontSize: '0.75rem', color: '#22a06b', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <Send size={12} /> Certificate emailed automatically
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
       })}
+
+      {/* 👈 Render Export Modal */}
+      <ExportModal
+        isOpen={exportConfig.isOpen}
+        onClose={() => !isExporting && setExportConfig({ isOpen: false, eventId: null, title: '' })}
+        onExport={handleExport}
+        isExporting={isExporting}
+        eventTitle={exportConfig.title}
+      />
     </div>
   );
 }
 
 /* ============================================================
-   TAB 2 — Global Meeting Link (one common link)
+   TAB 2 — Events Manager (Create, Edit, Delete)
    ============================================================ */
-function MeetingsTab() {
-  const [platform, setPlatform] = useState('google');
-  const [meetingLink, setMeetingLink] = useState('');
-  const [original, setOriginal] = useState({ platform: 'google', meetingLink: '' });
+function EventsTab() {
+  const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
+  
+  // Form State
+  const [editingId, setEditingId] = useState(null);
+  const [title, setTitle] = useState('');
+  const [meetingLink, setMeetingLink] = useState('');
+  const [date, setDate] = useState('');
+  const [duration, setDuration] = useState(60);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState('');
+
+  // Confirm Modal State
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, id: null, title: '' });
+  const [processing, setProcessing] = useState(false);
+
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      const res = await API.get('/admin/events');
+      setEvents(res.data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await API.get('/admin/meeting-link');
-        const data = res.data || { platform: 'google', meetingLink: '' };
-        setPlatform(data.platform || 'google');
-        setMeetingLink(data.meetingLink || '');
-        setOriginal({
-          platform: data.platform || 'google',
-          meetingLink: data.meetingLink || ''
-        });
-      } catch {
-        setError('Failed to load current link');
-      } finally {
-        setLoading(false);
-      }
-    })();
+    fetchEvents();
   }, []);
 
-  const hasUnsaved =
-    platform !== original.platform || meetingLink !== original.meetingLink;
+  const resetForm = () => {
+    setEditingId(null);
+    setTitle(''); setMeetingLink(''); setDate(''); setDuration(60);
+  };
 
-  const save = async () => {
-    setError('');
+  const handleEditClick = (ev) => {
+    const dateObj = new Date(ev.date);
+    const localISOTime = new Date(dateObj.getTime() - dateObj.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+    
+    setEditingId(ev._id);
+    setTitle(ev.title);
+    setMeetingLink(ev.meetingLink);
+    setDate(localISOTime);
+    setDuration(ev.durationMinutes);
+    
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
-    if (meetingLink && !/^https?:\/\//.test(meetingLink)) {
-      setError('Link must start with http:// or https://');
-      return;
+  const openDeleteModal = (event) => {
+    setConfirmConfig({ isOpen: true, id: event._id, title: event.title });
+  };
+
+  const confirmDelete = async () => {
+    if (!confirmConfig.id) return;
+    setProcessing(true);
+    
+    try {
+      await API.delete(`/admin/events/${confirmConfig.id}`);
+      if (editingId === confirmConfig.id) resetForm(); 
+      fetchEvents();
+      setConfirmConfig({ isOpen: false, id: null, title: '' });
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete event');
+    } finally {
+      setProcessing(false);
     }
+  };
 
+  const submitEvent = async (e) => {
+    e.preventDefault();
     setSaving(true);
     try {
-      const res = await API.put('/admin/meeting-link', { platform, meetingLink });
-      setOriginal({
-        platform: res.data.platform,
-        meetingLink: res.data.meetingLink
-      });
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1800);
+      const payload = {
+        title,
+        meetingLink,
+        date: new Date(date).toISOString(),
+        durationMinutes: Number(duration)
+      };
+
+      if (editingId) {
+        await API.put(`/admin/events/${editingId}`, payload);
+      } else {
+        await API.post('/admin/events', payload);
+      }
+      
+      resetForm();
+      fetchEvents();
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to save');
+      alert(err.response?.data?.message || 'Failed to save event');
     } finally {
       setSaving(false);
     }
   };
 
-  const copy = () => {
-    navigator.clipboard.writeText(meetingLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1800);
-  };
-
-  const platformName =
-    { google: 'Google Meet', teams: 'Microsoft Teams', zoom: 'Zoom', other: 'Other' }[
-      platform
-    ] || 'Meeting';
-
-  if (loading) return <div className="admin-empty">Loading…</div>;
-
   return (
-    <div className="global-link-wrap">
-      <div className="global-link-card">
+    <div className="global-link-wrap" style={{ maxWidth: 850 }}>
+      
+      {/* CREATE / EDIT EVENT FORM */}
+      <div className="global-link-card" style={{ marginBottom: 30, border: editingId ? '2px solid var(--maroon)' : '1px solid var(--border)' }}>
         <div className="global-link-header">
-          <div className="global-link-icon">
-            <Link2 size={22} />
-          </div>
+          <div className="global-link-icon"><Calendar size={22} /></div>
           <div>
-            <h3>Global Meeting Link</h3>
-            <p>Every patient who submits the form will see this link.</p>
+            <h3>{editingId ? 'Edit Event Details' : 'Create New Event'}</h3>
+            <p>{editingId ? 'Update the details for this event.' : 'Set the date, time, and link for the upcoming session.'}</p>
           </div>
         </div>
 
-        <div className="form-group">
-          <label>Platform</label>
-          <select
-            value={platform}
-            onChange={(e) => setPlatform(e.target.value)}
-          >
-            <option value="google">Google Meet</option>
-            <option value="teams">Microsoft Teams</option>
-            <option value="zoom">Zoom</option>
-            <option value="other">Other</option>
-          </select>
-        </div>
+        <form onSubmit={submitEvent}>
+          <div className="form-group">
+            <label>Event Title</label>
+            <input required value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Breast Cancer Awareness" />
+          </div>
+          
+          <div className="form-group">
+            <label>Meeting Link</label>
+            <input required value={meetingLink} onChange={e => setMeetingLink(e.target.value)} placeholder="https://meet.google.com/..." />
+          </div>
 
-        <div className="form-group">
-          <label>Meeting Link</label>
-          <div className="meet-input-wrap">
-            <input
-              value={meetingLink}
-              onChange={(e) => setMeetingLink(e.target.value)}
-              placeholder="https://meet.google.com/abc-defg-hij"
-            />
-            {meetingLink && (
-              <button
-                type="button"
-                className="meet-icon-btn"
-                onClick={copy}
-                title="Copy link"
-              >
-                {copied ? (
-                  <CheckCircle2 size={16} style={{ color: '#22a06b' }} />
-                ) : (
-                  <Copy size={16} />
-                )}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div className="form-group">
+              <label>Date & Time</label>
+              <input required type="datetime-local" value={date} onChange={e => setDate(e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Duration (Minutes)</label>
+              <input required type="number" min="15" step="15" value={duration} onChange={e => setDuration(e.target.value)} />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: 12 }}>
+            <button className="btn" type="submit" disabled={saving}>
+              {saving ? 'Saving…' : editingId ? 'Update Event' : 'Create Event'}
+            </button>
+            {editingId && (
+              <button type="button" className="btn btn-ghost" onClick={resetForm} disabled={saving}>
+                Cancel Edit
               </button>
             )}
           </div>
-          <span className="meet-hint">
-            Patients will see this link in a popup after submitting the form.
-          </span>
-        </div>
-
-        {error && <p className="login-error">{error}</p>}
-
-        <div className="global-link-actions">
-          <button
-            className="btn"
-            onClick={save}
-            disabled={!hasUnsaved || saving}
-          >
-            {saving
-              ? 'Saving…'
-              : saved
-              ? '✓ Saved'
-              : hasUnsaved
-              ? 'Save Link'
-              : 'No changes'}
-          </button>
-
-          {meetingLink && (
-            <a
-              className="btn btn-outline"
-              href={meetingLink}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ExternalLink size={14} /> Test Link
-            </a>
-          )}
-        </div>
-
-        {original.meetingLink && !hasUnsaved && (
-          <div className="global-link-active">
-            <div className="active-label">Currently active</div>
-            <div className="active-value">
-              <strong>{platformName}:</strong> {original.meetingLink}
-            </div>
-          </div>
-        )}
+        </form>
       </div>
+
+      {/* LIST OF EVENTS */}
+      <h3 style={{ color: 'var(--maroon-deep)', marginBottom: 16 }}>Upcoming & Past Events</h3>
+      
+      {loading ? <p>Loading events…</p> : events.length === 0 ? <p>No events created yet.</p> : (
+        <div className="reg-cards">
+          {events.map(ev => {
+            const dateObj = new Date(ev.date);
+            return (
+              <div key={ev._id} className="reg-card" style={{ borderLeft: ev.status === 'completed' ? '4px solid #22a06b' : ev.status === 'ongoing' ? '4px solid var(--accent)' : '4px solid var(--maroon-light)' }}>
+                <div className="reg-card-head">
+                  <div>
+                    <div className="reg-name">{ev.title}</div>
+                    <div className="reg-date">
+                      {dateObj.toLocaleString()} ({ev.durationMinutes} mins)
+                    </div>
+                  </div>
+                  <div className={`reg-status ${ev.status === 'completed' ? 'ok' : ev.status === 'ongoing' ? 'pending' : ''}`} style={{
+                    background: ev.status === 'upcoming' ? '#f0f0f0' : '',
+                    color: ev.status === 'upcoming' ? '#666' : ''
+                  }}>
+                    {ev.status.toUpperCase()}
+                  </div>
+                </div>
+                
+                <div style={{ marginTop: 12, fontSize: '0.85rem', wordBreak: 'break-all' }}>
+                  <a href={ev.meetingLink} target="_blank" rel="noreferrer" style={{ color: 'var(--maroon)' }}>
+                    {ev.meetingLink}
+                  </a>
+                </div>
+                
+                {ev.certificatesSent && (
+                  <div style={{ marginTop: 12, fontSize: '0.75rem', color: '#22a06b', fontWeight: 600 }}>
+                    ✓ Certificates sent to attendees
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 16, paddingTop: 16, borderTop: '1px dashed var(--border)' }}>
+                  <button 
+                    className="btn btn-outline" 
+                    style={{ padding: '6px 12px', fontSize: '0.8rem', flex: 1 }}
+                    onClick={() => handleEditClick(ev)}
+                    disabled={ev.status === 'completed'} 
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    className="btn" 
+                    style={{ padding: '6px 12px', fontSize: '0.8rem', flex: 1, background: '#e74c3c' }}
+                    onClick={() => openDeleteModal(ev)}
+                  >
+                    Delete
+                  </button>
+                </div>
+
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 👈 RENDER THE CONFIRM MODAL */}
+      <ConfirmModal
+        isOpen={confirmConfig.isOpen}
+        onClose={() => !processing && setConfirmConfig({ isOpen: false, id: null, title: '' })}
+        onConfirm={confirmDelete}
+        isProcessing={processing}
+        title="Delete Event?"
+        message={`Are you sure you want to delete "${confirmConfig.title}"? This will permanently delete all patient registrations linked to this event. This action cannot be undone.`}
+        confirmText="Yes, Delete"
+        variant="danger"
+      />
+
     </div>
   );
 }

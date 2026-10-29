@@ -1,49 +1,40 @@
 const express = require('express');
 const router = express.Router();
 const Submission = require('../models/Submission');
-const Setting = require('../models/Settings');
+const Event = require('../models/Event');
 
 // Create new submission (public)
 router.post('/', async (req, res) => {
   try {
-    const { name, phone, emirate, address, email } = req.body;
+    const { eventId, name, phone, emirate, address, email } = req.body;
 
     const phoneRegex = /^\+971\d{9}$/;
     if (!phoneRegex.test(phone)) {
       return res.status(400).json({ message: 'Invalid phone number. Format: +971XXXXXXXXX' });
     }
 
-    if (!name || !emirate) {
-      return res.status(400).json({ message: 'Name and Emirate are required' });
+    if (!name || !emirate || !eventId || !email) {
+      return res.status(400).json({ message: 'Name, Email, Emirate, and Event are required' });
     }
 
-    const submission = new Submission({ name, phone, emirate, address, email });
+    const submission = new Submission({ eventId, name, phone, emirate, address, email });
     await submission.save();
 
-    res.status(201).json({ message: 'Submission created', submission });
+    // Populate Event so the frontend Modal gets the meeting link and title immediately
+    const populatedSubmission = await Submission.findById(submission._id).populate('eventId');
+
+    res.status(201).json({ message: 'Submission created', submission: populatedSubmission });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: 'Server error' });
   }
 });
 
-// ✅ Get the current GLOBAL meeting link (public)
-// ⚠️ MUST come before /:id
-router.get('/meeting-link', async (req, res) => {
+// Get active events for the public registration form dropdown
+router.get('/active-events', async (req, res) => {
   try {
-    const setting = await Setting.findOne({ key: 'global_meeting' });
-    res.json(setting?.value || { platform: 'google', meetingLink: '' });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-// Get single submission by ID (public)
-router.get('/:id', async (req, res) => {
-  try {
-    const submission = await Submission.findById(req.params.id);
-    if (!submission) return res.status(404).json({ message: 'Not found' });
-    res.json(submission);
+    const events = await Event.find({ status: { $in: ['upcoming', 'ongoing'] } }).sort({ date: 1 });
+    res.json(events);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
   }

@@ -5,6 +5,9 @@ const Admin = require('../models/Admin');
 const Submission = require('../models/Submission');
 const auth = require('../middleware/auth');
 const Setting = require('../models/Settings');
+const Event = require('../models/Event');
+const ExcelJS = require('exceljs');
+const PDFDocument = require('pdfkit');
 
 // ==============================
 // POST /api/admin/login
@@ -97,7 +100,9 @@ router.get('/me', auth, async (req, res) => {
 // ==============================
 router.get('/submissions', auth, async (req, res) => {
   try {
-    const submissions = await Submission.find().sort({ createdAt: -1 });
+    const submissions = await Submission.find()
+      .populate('eventId') // 👈 THIS IS THE FIX
+      .sort({ createdAt: -1 });
     res.json(submissions);
   } catch (err) {
     res.status(500).json({ message: 'Server error' });
@@ -201,4 +206,140 @@ router.patch('/submissions/:id', auth, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+
+/// ==============================
+// GET /api/admin/export/:eventId
+// ==============================
+router.get('/export/:eventId', auth, async (req, res) => {
+  try {
+    const { format } = req.query;
+    const { eventId } = req.params;
+
+    const event = await Event.findById(eventId);
+    if (!event) return res.status(404).json({ message: 'Event not found' });
+
+    const registrations = await Submission.find({ eventId }).sort({ name: 1 });
+
+    // 👈 Create clean filename: Registrations-EventName-YYYY-MM-DD
+    const cleanEventName = event.title.replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-');
+    const dateStr = new Date().toISOString().split('T')[0];
+    const fileName = `Registrations-${cleanEventName}-${dateStr}`;
+
+    // ==========================================
+    // 1. EXCEL EXPORT
+    // ==========================================
+    if (format === 'excel') {
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Registrations');
+
+      worksheet.columns = [
+        { header: 'Name', key: 'name', width: 25 },
+        { header: 'Email', key: 'email', width: 30 },
+        { header: 'Phone', key: 'phone', width: 20 },
+        { header: 'Emirate', key: 'emirate', width: 15 },
+        { header: 'Attendance', key: 'attendance', width: 15 },
+        { header: 'Certificate Sent', key: 'certificateSent', width: 15 },
+        { header: 'Date Registered', key: 'createdAt', width: 25 },
+      ];
+
+      worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      worksheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF8B1A4A' } };
+
+      registrations.forEach(reg => {
+        worksheet.addRow({
+          name: reg.name,
+          email: reg.email,
+          phone: reg.phone + '\u200B', // 👈 Zero-width space prevents Excel scientific notation
+          emirate: reg.emirate,
+          attendance: reg.attendance === 'attended' ? 'Attended' : 'Not Attended',
+          certificateSent: reg.certificateSent ? 'Yes' : 'No',
+          createdAt: new Date(reg.createdAt).toLocaleString(),
+        });
+      });
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}.xlsx"`);
+
+      await workbook.xlsx.write(res);
+      return res.end();
+    }
+
+    // ==========================================
+    // 2. PDF EXPORT (With Branding)
+    // ==========================================
+    if (format === 'pdf') {
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}.pdf"`);
+
+      doc.pipe(res);
+
+      // 👈 PDF Header / Branding
+      doc.fontSize(22).fillColor('#8B1A4A').font('Helvetica-Bold').text('METROSTARCARE', { align: 'center' });
+      doc.fontSize(12).fillColor('#6B5560').font('Helvetica').text('Metro Medical Centre', { align: 'center' });
+      doc.moveDown(1.5);
+      
+      // Event Details
+      doc.fontSize(16).fillColor('#000000').font('Helvetica-Bold').text(event.title, { align: 'center' });
+      doc.fontSize(10).font('Helvetica').text(`Date: ${new Date(event.date).toLocaleString()}`, { align: 'center' });
+      doc.fontSize(10).text(`Generated on: ${new Date().toLocaleString()}`, { align: 'center' });
+      
+      doc.moveDown(2);
+
+      // Table Headers
+      const tableTop = doc.y;
+      doc.fontSize(10).font('Helvetica-Bold').fillColor('#8B1A4A');
+      doc.text('Name', 50, tableTop);
+      doc.text('Phone', 180, tableTop);
+      doc.text('Email', 280, tableTop);
+      doc.text('Emirate', 420, tableTop);
+      doc.text('Status', 490, tableTop);
+
+      // Draw Line
+      doc.moveTo(50, tableTop + 15).lineTo(550, tableTop + 15).strokeColor('#EAD9E2').stroke();
+      
+      // Table Rows
+      let y = tableTop + 25;
+      doc.font('Helvetica').fillColor('#000000');
+
+      registrations.forEach(reg => {
+        if (y > 720) {
+          doc.addPage();
+          y = 50;
+        }
+        doc.fontSize(9).text(reg.name.substring(0, 20), 50, y);
+        doc.text(reg.phone, 180, y);
+        doc.text(reg.email ? reg.email.substring(0, 25) : '-', 280, y);
+        doc.text(reg.emirate, 420, y);
+        doc.text(reg.attendance === 'attended' ? 'Attended' : 'Not Attended', 490, y);
+        y += 20;
+      });
+
+      doc.end();
+      return;
+    }
+
+    // ==========================================
+    // 3. CSV EXPORT
+    // ==========================================
+    if (format === 'csv') {
+      let csvContent = 'Name,Email,Phone,Emirate,Attendance,Certificate Sent,Date\n';
+      registrations.forEach(reg => {
+        // 👈 Wrapping phone in ="..." forces Excel to treat it as text
+        csvContent += `"${reg.name}","${reg.email || ''}","=""${reg.phone}""","${reg.emirate}","${reg.attendance}","${reg.certificateSent ? 'Yes' : 'No'}","${new Date(reg.createdAt).toLocaleString()}"\n`;
+      });
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName}.csv"`);
+      return res.status(200).send(csvContent);
+    }
+
+    res.status(400).json({ message: 'Invalid format requested' });
+  } catch (err) {
+    console.error('Export error:', err);
+    res.status(500).json({ message: 'Server error during export' });
+  }
+});
+
 module.exports = router;

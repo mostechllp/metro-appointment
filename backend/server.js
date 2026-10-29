@@ -5,6 +5,7 @@ const cors = require('cors');
 
 const submissionRoutes = require('./routes/submission');
 const adminRoutes = require('./routes/admin');
+const eventRoutes = require('./routes/event');
 
 const app = express();
 
@@ -13,25 +14,18 @@ const ALLOWED_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:5173',
   'http://127.0.0.1:3000',
-   'https://metrostarcare.ae'
+  'https://metrostarcare.ae'
 ];
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow requests with no origin (curl, Postman, mobile apps)
     if (!origin) return callback(null, true);
-
-    // Silently reject browser-extension requests
     if (origin.startsWith('chrome-extension://') ||
         origin.startsWith('moz-extension://') ||
         origin.startsWith('safari-extension://')) {
-      return callback(null, false); // no log, no header, just reject
+      return callback(null, false);
     }
-
-    if (ALLOWED_ORIGINS.includes(origin)) {
-      return callback(null, true);
-    }
-
+    if (ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
     console.warn('🚫 CORS blocked origin:', origin);
     callback(new Error(`CORS blocked: ${origin}`));
   },
@@ -40,15 +34,18 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Express 5–safe preflight
 app.options(/.*/, cors());
 app.use(express.json());
 
 // Routes
 app.use('/api/submissions', submissionRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin/events', eventRoutes); 
 
 app.get('/', (req, res) => res.send('Metro StarCare API running'));
+
+// 👈 START CRON JOB BEFORE SERVER LISTENS
+require('./utils/cronJob'); 
 
 // Connect MongoDB Atlas
 mongoose
